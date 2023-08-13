@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Nathan Fiedler
 //
 use clap::{arg, command, value_parser, Arg};
-use fastcdc::v2020::*;
+use fastcdc_alt::*;
 use memmap2::Mmap;
 use std::fs::File;
 
@@ -29,11 +29,13 @@ fn main() {
     let mmap = unsafe { Mmap::map(&file).expect("cannot create mmap?") };
     let min_size = avg_size / 4;
     let max_size = avg_size * 4;
-    let chunker = FastCDC::new(&mmap[..], min_size, avg_size, max_size);
-    for entry in chunker {
+    let mut chunker = FastCDC::new(min_size, avg_size, max_size).unwrap();
+    chunker.set_content_length(mmap.len());
+
+    for entry in chunker.as_iterator(&mmap) {
         println!(
             "hash={} offset={} size={}",
-            entry.hash, entry.offset, entry.length
+            entry.hash, entry.offset, entry.cutpoint
         );
     }
 }
