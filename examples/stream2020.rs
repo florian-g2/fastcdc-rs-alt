@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Nathan Fiedler
 //
 use clap::{arg, command, value_parser, Arg};
-use fastcdc::v2020::*;
+use fastcdc_alt::*;
 use std::fs::File;
 
 fn main() {
@@ -27,12 +27,12 @@ fn main() {
     let file = File::open(filename).expect("cannot open file!");
     let min_size = avg_size / 4;
     let max_size = avg_size * 4;
-    let chunker = StreamCDC::new(file, min_size, avg_size, max_size);
+    let chunker = StreamCDC::new(file, min_size, avg_size, max_size).unwrap();
     for result in chunker {
-        let entry = result.expect("failed to read chunk");
+        let (_data, chunk) = result.expect("failed to read chunk");
         println!(
             "hash={} offset={} size={}",
-            entry.hash, entry.offset, entry.length
+            chunk.hash, chunk.offset, chunk.cutpoint
         );
     }
 }
