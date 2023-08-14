@@ -5,6 +5,7 @@ use clap::{arg, command, value_parser, Arg};
 use fastcdc_alt::*;
 use memmap2::Mmap;
 use std::fs::File;
+use std::time::{Instant};
 
 fn main() {
     let matches = command!("Example of using v2020 chunker.")
@@ -26,6 +27,8 @@ fn main() {
     let avg_size = *size;
     let filename = matches.get_one::<String>("INPUT").unwrap();
     let file = File::open(filename).expect("cannot open file!");
+
+    let start = Instant::now();
     let mmap = unsafe { Mmap::map(&file).expect("cannot create mmap?") };
     let min_size = avg_size / 4;
     let max_size = avg_size * 4;
@@ -38,4 +41,6 @@ fn main() {
             entry.hash, entry.offset, entry.cutpoint
         );
     }
+
+    println!("Finished in {}ms", start.elapsed().as_millis())
 }
