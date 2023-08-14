@@ -27,9 +27,6 @@ memmap2 = "0.5.8"
 tokio = { version = "1", features = ["fs", "io-util", "rt", "rt-multi-thread", "macros"] }
 futures-test = { version = "0.3" }
 
-# With this as a dependency, the tests in async_stream_cdc.rs are also run.
-fastcdc-alt = { path = ".", features = ["tokio"] }
-
 [dependencies]
 futures = { version = "0.3", optional = true }
 tokio = { version = "1", features = ["io-util"], optional = true }
