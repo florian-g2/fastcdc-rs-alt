@@ -313,7 +313,7 @@ pub struct Chunk {
     /// \
     /// Relevant for the [FastCDC::cut].\
     /// This value is the same as `cutpoint` for [FastCDCIterator] and [StreamCDC].
-    pub cutpoint_in_buffer: usize,
+    pub cutpoint_in_buffer: usize
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -326,13 +326,6 @@ pub struct Context {
     mask: u64,
     index: usize,
     hash: u64
-}
-
-impl Context {
-    #[inline(always)]
-    fn get_remaining(&self) -> usize {
-        self.length - self.processed
-    }
 }
 
 ///
@@ -461,6 +454,7 @@ impl FastCDC {
         });
     }
 
+    #[inline(always)]
     fn recycle_context(&mut self, processed: usize) {
         let context = self.context.as_mut().unwrap();
         context.processed += processed;
@@ -528,10 +522,15 @@ impl FastCDC {
         &mut self,
         buffer: &[u8]
     ) -> Option<Chunk> {
-        let context = self.context.as_mut().expect("No context set.");
+        let context = self.context.as_mut().unwrap();
 
-        let remaining = context.get_remaining().min(self.max_size);
-        let center = context.get_remaining().min(self.avg_size);
+        let mut remaining = context.length - context.processed;
+        let mut center = self.avg_size;
+        if remaining > self.max_size {
+            remaining = self.max_size;
+        } else if remaining < center {
+            center = remaining;
+        }
 
         if remaining < self.min_size {
             return if remaining == 0 {
@@ -541,7 +540,7 @@ impl FastCDC {
                     hash: 0,
                     offset: context.processed,
                     cutpoint: remaining,
-                    cutpoint_in_buffer: remaining - context.processed_last_none_cut,
+                    cutpoint_in_buffer: remaining - context.processed_last_none_cut
                 })
             }
         }
@@ -582,9 +581,8 @@ impl FastCDC {
 
             context.hash = (context.hash << 2).wrapping_add(GEAR_LS[buffer[pos_in_buffer] as usize]);
             if (context.hash & context.mask_ls) == 0 {
-                let hash = context.hash;
                 let result = Some(Chunk {
-                    hash,
+                    hash: context.hash,
                     offset: context.processed,
                     cutpoint: pos,
                     cutpoint_in_buffer: pos_in_buffer
@@ -604,9 +602,8 @@ impl FastCDC {
 
             context.hash = context.hash.wrapping_add(GEAR[buffer[pos_in_buffer + 1] as usize]);
             if (context.hash & context.mask) == 0 {
-                let hash = context.hash;
                 let result = Some(Chunk {
-                    hash,
+                    hash: context.hash,
                     offset: context.processed,
                     cutpoint: pos + 1,
                     cutpoint_in_buffer: pos_in_buffer + 1
@@ -665,6 +662,7 @@ pub struct FastCDCIterator<'a, 'b> {
 impl<'a, 'b> Iterator for FastCDCIterator<'a, 'b> {
     type Item = Chunk;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Chunk> {
         if self.cursor == self.buffer.len() {
             return None;
