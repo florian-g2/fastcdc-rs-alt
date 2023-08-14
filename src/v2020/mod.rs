@@ -509,7 +509,7 @@ impl FastCDC {
     ///         if let Some(chunk) = chunker.cut(&buffer[cursor..]) {
     ///             println!("Buffer {} with cursor at {} returned cut point {}.", i + 1, cursor, chunk.cutpoint);
     ///
-    ///             cursor = chunk.cutpoint_in_buffer;
+    ///             cursor += chunk.cutpoint_in_buffer;
     ///             if cursor == buffer.len() { break }
     ///         } else {
     ///             println!("Buffer {} with cursor at {} returned None.", i + 1, cursor);
