@@ -1,4 +1,4 @@
-# FastCDC-Alt [![docs.rs](https://docs.rs/fastcdc-alt/badge.svg)](https://docs.rs/fastcdc-alt) [![Crates.io](https://img.shields.io/crates/v/fastcdc-alt.svg)](https://crates.io/crates/fastcdc-alt) ![Test](https://github.com/florian-g2/fastcdc-rs-alt/actions/workflows/Test/badge.svg)
+# FastCDC-Alt [![docs.rs](https://docs.rs/fastcdc-alt/badge.svg)](https://docs.rs/fastcdc-alt) [![Crates.io](https://img.shields.io/crates/v/fastcdc-alt.svg)](https://crates.io/crates/fastcdc-alt) ![Test](https://github.com/florian-g2/fastcdc-rs-alt/actions/workflows/test.yml/badge.svg)
 
 This crate is a fork of the original Rust implementation by Nathan Fiedler. ([nlfiedler/fastcdc-rs](https://github.com/nlfiedler/fastcdc-rs))\
 Included here is the enhanced 2020 "FastCDC" content defined chunking algorithm described by Wen Xia, et al.\
