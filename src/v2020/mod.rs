@@ -1209,7 +1209,7 @@ mod tests {
                 digest: "1aa7ad95f274d6ba34a983946ebc5af3".into(),
             },
         ];
-        let mut chunker = StreamCDC::new(file, 4096, 16384, 65535).unwrap();
+        let chunker = StreamCDC::new(file, 4096, 16384, 65535).unwrap();
         let mut index = 0;
         for result in chunker {
             assert!(result.is_ok());

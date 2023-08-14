@@ -194,8 +194,6 @@ impl<R: AsyncRead + Unpin> AsyncStreamCDC<R> {
 
 #[cfg(test)]
 mod tests {
-    use crate::v2020::MASKS;
-
     use super::AsyncStreamCDC;
 
     #[test]
@@ -297,7 +295,7 @@ mod tests {
         let mut index = 0;
 
         for chunk in chunks {
-            let (data, chunk) = chunk.unwrap();
+            let (_data, chunk) = chunk.unwrap();
             assert_eq!(chunk.hash, expected_chunks[index].hash);
             assert_eq!(chunk.offset, expected_chunks[index].offset as usize);
             assert_eq!(chunk.cutpoint, expected_chunks[index].length);

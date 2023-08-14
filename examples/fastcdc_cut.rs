@@ -2,7 +2,7 @@
 // Copyright (c) 2023 Florian Gäbler
 //
 
-use fastcdc_alt::{FastCDC, Normalization};
+use fastcdc_alt::{FastCDC};
 
 fn main() {
     let buffers = vec![
