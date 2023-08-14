@@ -556,7 +556,6 @@ impl FastCDC {
                     cutpoint_in_buffer: 1
                 });
 
-                drop(context);
                 self.recycle_context(pos + 1);
 
                 return result;
@@ -588,7 +587,6 @@ impl FastCDC {
                     cutpoint_in_buffer: pos_in_buffer
                 });
 
-                drop(context);
                 self.recycle_context(pos);
 
                 return result;
@@ -609,7 +607,6 @@ impl FastCDC {
                     cutpoint_in_buffer: pos_in_buffer + 1
                 });
 
-                drop(context);
                 self.recycle_context(pos + 1);
 
                 return result;
@@ -633,7 +630,6 @@ impl FastCDC {
             cutpoint_in_buffer: remaining - context.processed_last_none_cut
         });
 
-        drop(context);
         self.recycle_context(remaining);
 
         result
