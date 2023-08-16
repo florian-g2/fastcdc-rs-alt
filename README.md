@@ -10,7 +10,7 @@ This README and all docs are adapted to the adjusted API.
 
 ## Whats different?
 The adjusted `FastCDC` structure now allows you to provide the data piece by piece required to find the next cut point.\
-The advantages of this approach are that it is no more required to keep the entire data in one contiguous memory block and therefore also save on some memory copies.\
+The advantages of this approach are that it is no more required to keep the entire data to cut in one contiguous memory block and therefore also save on some memory copies.\
 This is most useful for e.g. advanced streaming logics.
 
 Example usage with the original crate:
@@ -36,25 +36,33 @@ fn main(consumer: Receiver<Box<[u8]>>) {
 }
 ```
 
-Example usage with this fork:
+Very basic example usage with this fork.\
+You can see a full example in the [fastcdc_cut](/examples/fastcdc_cut.rs) file.
+
 ```rust
+use std::collections::VecDeque;
+
 fn main(consumer: Receiver<Box<[u8]>>) {
   let mut fastcdc = FastCDC::new(65535, 1048576, 16777216).unwrap();
-  
+
   // Inform the FastCDC struct how much data we are expecting.
   fastcdc.set_content_length(134217728); // 128 MiB
+  
 
-  // If we are interested in the chunk data, we need to hold to buffers temporarily here.
-  let chunk_data = Vec::<Box<[u8]>>::new(); 
   for buffer in consumer.iter() {
-    let result = fastcdc.cut(&buffer);
-    chunk_data.push(buffer);
+    let mut cursor = 0;
     
-    if let Some(chunk) = result {
-      // .. process chunk and data.
-      
-      // Clear the held buffers with e.g. chunk_data.clear();
-      // Employ further handling for the cases where the cut point is not exactly at the buffer boundaries.
+    loop {      
+      if let Some(chunk) = fastcdc.cut(&buffer[cursor..]) {
+        // .. process chunk hash
+
+        cursor += chunk.cutpoint;
+        if cursor == buffer.len() {
+          break;
+        }
+      }
+        break;
+      }
     }
   }
 }
