@@ -108,9 +108,9 @@ An example using `FastCDC` to find chunk boundaries in data loaded into memory:
 
 ```rust
 let contents = std::fs::read("test/fixtures/SekienAkashita.jpg").unwrap();
-let mut chunker = fastcdc_alt::FastCDC::new(16384, 32768, 65536);
+let mut chunker = fastcdc_alt::FastCDC::new(16384, 32768, 65536).unwrap();
 for chunk in chunker.as_iterator(&contents) {
-    println!("offset={} length={}", chunk.offset, chunk.length);
+    println!("offset={} length={}", chunk.offset, chunk.get_length());
 }
 ```
 
@@ -124,7 +124,7 @@ let source = std::fs::File::open("test/fixtures/SekienAkashita.jpg").unwrap();
 let chunker = fastcdc_alt::StreamCDC::new(source, 4096, 16384, 65535).unwrap();
 for result in chunker {
   let (_data, chunk) = result.unwrap();
-  println!("offset={} length={}", chunk.offset, chunk.cutpoint);
+  println!("offset={} length={}", chunk.offset, chunk.get_length());
 }
 ```
 
@@ -135,13 +135,13 @@ and uses a byte vector with capacity equal to the specified maximum chunk size.
 
 ```rust
 let source = std::fs::File::open("test/fixtures/SekienAkashita.jpg").unwrap();
-let chunker = fastcdc_alt::AsyncStreamCDC::new(&source, 4096, 16384, 65535);
+let chunker = fastcdc_alt::AsyncStreamCDC::new(&source, 4096, 16384, 65535).unwrap();
 let stream = chunker.as_stream();
 let chunks = stream.collect::<Vec<_>>().await;
 
 for result in chunks {
   let chunk = result.unwrap();
-  println!("offset={} length={}", chunk.offset, chunk.length);
+  println!("offset={} length={}", chunk.offset, chunk.get_length());
 }
 ```
 ## Reference Material
