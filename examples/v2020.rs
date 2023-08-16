@@ -38,7 +38,7 @@ fn main() {
     for entry in chunker.as_iterator(&mmap) {
         println!(
             "hash={} offset={} size={}",
-            entry.hash, entry.offset, entry.cutpoint
+            entry.hash, entry.offset, entry.get_length()
         );
     }
 

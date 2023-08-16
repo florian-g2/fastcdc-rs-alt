@@ -35,7 +35,7 @@ async fn main() {
         let (_data, chunk) = result.expect("failed to read chunk");
         println!(
             "hash={} offset={} size={}",
-            chunk.hash, chunk.offset, chunk.cutpoint
+            chunk.hash, chunk.offset, chunk.get_length()
         );
     }
 }

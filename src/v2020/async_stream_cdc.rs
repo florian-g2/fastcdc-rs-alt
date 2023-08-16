@@ -68,7 +68,7 @@ pub struct AsyncStreamCDC<R> {
     /// Source from which data is read into `buffer`.
     source: R,
     /// Number of bytes read from the source so far.
-    processed: u64,
+    processed: usize,
     /// True when the source produces no more data.
     eof: bool,
 }
@@ -151,12 +151,17 @@ impl<R: AsyncRead + Unpin> AsyncStreamCDC<R> {
         } else {
             self.inner.set_content_length(self.length);
 
-            let mut chunk = self.inner.cut(&self.buffer[..self.length]).ok_or(Error::Empty)?;
-            // Since the content length is set each invocation, the already set offset is incorrect in this context.
-            chunk.offset = self.processed as usize;
-
+            let chunk = self.inner.cut(&self.buffer[..self.length]).ok_or(Error::Empty)?;
             let data = self.drain_bytes(chunk.cutpoint)?;
-            self.processed += chunk.cutpoint as u64;
+
+            let cutpoint = self.processed + chunk.cutpoint;
+            let chunk = Chunk {
+                hash: chunk.hash,
+                offset: self.processed as isize,
+                cutpoint
+            };
+
+            self.processed = cutpoint;
 
             Ok((data, chunk))
         }
@@ -297,12 +302,11 @@ mod tests {
         for chunk in chunks {
             let (_data, chunk) = chunk.unwrap();
             assert_eq!(chunk.hash, expected_chunks[index].hash);
-            assert_eq!(chunk.offset, expected_chunks[index].offset as usize);
-            assert_eq!(chunk.cutpoint, expected_chunks[index].length);
-            assert_eq!(chunk.cutpoint_in_buffer, expected_chunks[index].length);
+            assert_eq!(chunk.offset, expected_chunks[index].offset as isize);
+            assert_eq!(chunk.cutpoint, expected_chunks[index].offset as usize + expected_chunks[index].length);
             let mut hasher = Md5::new();
             hasher
-                .update(&contents[chunk.offset..chunk.offset + chunk.cutpoint]);
+                .update(&contents[chunk.offset as usize..chunk.cutpoint]);
             let table = hasher.finalize();
             let digest = format!("{:x}", table);
             assert_eq!(digest, expected_chunks[index].digest);

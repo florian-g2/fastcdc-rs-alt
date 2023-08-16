@@ -292,35 +292,27 @@ pub struct Chunk {
     /// The gear hash value as of the end of the chunk.
     pub hash: u64,
 
-    /// The offset at which this chunk was identified.\
+    /// The offset in the given buffer at which this chunk was identified.\
     /// \
-    /// The [FastCDC::cut] method sets this value to the offset at the provided content length, not the passed buffer.\
-    /// The [FastCDCIterator] struct created by the [FastCDC::as_iterator] method sets this value to the offset at the given buffer.\
-    /// The iterator of the [StreamCDC] struct sets this value to the offset in the provided source.
-    pub offset: usize,
+    /// Note:\
+    /// [FastCDC::cut] may set a negative value if the chunk starts at a previous buffer.
+    pub offset: isize,
 
-    /// The cut point at which this chunk ends.\
-    /// This value is relative to the `offset` and does therefore also represent the chunks length.\
-    /// \
-    /// Since the [FastCDC::cut] method remembers previous buffers
-    /// that did not yield a chunk, for [FastCDC::cut] this cut point includes the length of those.\
-    /// This value is the same as `cutpoint_in_buffer` for [FastCDCIterator] and [StreamCDC].
+    /// The cut point in the given buffer at which this chunk ends.
     pub cutpoint: usize,
+}
 
-    /// The cut point at which this chunks ends in the current provided buffer.\
-    /// This value is relative to the passed buffer for [FastCDC::cut].\
-    /// This value is relative to the offset for [FastCDCIterator] and [StreamCDC].\
-    /// \
-    /// Relevant for the [FastCDC::cut].\
-    /// This value is the same as `cutpoint` for [FastCDCIterator] and [StreamCDC].
-    pub cutpoint_in_buffer: usize
+impl Chunk {
+    #[inline(always)]
+    pub fn get_length(&self) -> usize {
+        (self.cutpoint as isize - self.offset) as usize
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Context {
-    length: usize,
+    remaining: usize,
     processed: usize,
-    processed_last_none_cut: usize,
     last_cycle_incomplete: bool,
     mask_ls: u64,
     mask: u64,
@@ -352,9 +344,9 @@ pub struct Context {
 /// # use std::fs;
 /// # use fastcdc_alt::v2020;
 /// let contents = fs::read("test/fixtures/SekienAkashita.jpg").unwrap();
-/// let mut chunker = v2020::FastCDC::new(8192, 16384, 65535).unwrap();///
+/// let mut chunker = v2020::FastCDC::new(8192, 16384, 65535).unwrap();
 /// for chunk in chunker.as_iterator(&contents) {
-///     println!("offset={} size={}", chunk.offset, chunk.cutpoint);
+///     println!("offset={} size={}", chunk.offset, chunk.get_length());
 /// }
 /// ```
 ///
@@ -367,7 +359,7 @@ pub struct FastCDC {
     mask_l: u64,
     mask_s_ls: u64,
     mask_l_ls: u64,
-    context: Option<Context>
+    context: Context
 }
 
 
@@ -412,16 +404,15 @@ impl FastCDC {
         let mask_s_ls = mask_s << 1;
         let mask_l_ls = mask_l << 1;
 
-        let context = content_length.map(|content_length| Context {
-            length: content_length,
+        let context = Context {
+            remaining: content_length.unwrap_or(0),
             processed: 0,
-            processed_last_none_cut: 0,
             last_cycle_incomplete: false,
             mask_ls: mask_s_ls,
             mask: mask_s,
             index: (min_size / 2) as usize,
             hash: 0,
-        });
+        };
 
         Ok(Self {
             min_size: min_size as usize,
@@ -442,29 +433,20 @@ impl FastCDC {
     /// and no more included in the calculation of the next chunk.
     ///
     pub fn set_content_length(&mut self, length: usize) {
-        self.context = Some(Context {
-            length,
-            processed: 0,
-            processed_last_none_cut: 0,
-            last_cycle_incomplete: false,
-            mask_ls: self.mask_s_ls,
-            mask: self.mask_s,
-            index: self.min_size / 2,
-            hash: 0,
-        });
+        self.context.remaining = length;
+
+        self.recycle_context(0);
     }
 
     #[inline(always)]
     fn recycle_context(&mut self, processed: usize) {
-        let context = self.context.as_mut().unwrap();
-        context.processed += processed;
-
-        context.processed_last_none_cut = 0;
-        context.last_cycle_incomplete = false;
-        context.mask_ls = self.mask_s_ls;
-        context.mask = self.mask_s;
-        context.index = self.min_size / 2;
-        context.hash = 0;
+        self.context.remaining -= processed;
+        self.context.processed = 0;
+        self.context.last_cycle_incomplete = false;
+        self.context.mask_ls = self.mask_s_ls;
+        self.context.mask = self.mask_s;
+        self.context.index = self.min_size / 2;
+        self.context.hash = 0;
     }
 
     ///
@@ -497,13 +479,13 @@ impl FastCDC {
     ///     loop {
     ///         // Buffer 1 with cursor at 0 returned None.
     ///         // Buffer 2 with cursor at 0 returned None.
-    ///         // Buffer 3 with cursor at 0 returned cut point 2560.
+    ///         // Buffer 3 with cursor at 0 returned offset -2048 and cut point 512.
     ///         // Buffer 3 with cursor at 512 returned None.
-    ///         // Buffer 4 with cursor at 0 returned cut point 1536.
+    ///         // Buffer 4 with cursor at 0 returned offset -512 and cut point 1024.
     ///         if let Some(chunk) = chunker.cut(&buffer[cursor..]) {
-    ///             println!("Buffer {} with cursor at {} returned cut point {}.", i + 1, cursor, chunk.cutpoint);
+    ///             println!("Buffer {} with cursor at {} returned offset {} and cut point {}.", i + 1, cursor, chunk.offset, chunk.cutpoint);
     ///
-    ///             cursor += chunk.cutpoint_in_buffer;
+    ///             cursor += chunk.cutpoint;
     ///             if cursor == buffer.len() { break }
     ///         } else {
     ///             println!("Buffer {} with cursor at {} returned None.", i + 1, cursor);
@@ -522,9 +504,7 @@ impl FastCDC {
         &mut self,
         buffer: &[u8]
     ) -> Option<Chunk> {
-        let context = self.context.as_mut().unwrap();
-
-        let mut remaining = context.length - context.processed;
+        let mut remaining = self.context.remaining;
         let mut center = self.avg_size;
         if remaining > self.max_size {
             remaining = self.max_size;
@@ -538,22 +518,20 @@ impl FastCDC {
             } else {
                 Some(Chunk {
                     hash: 0,
-                    offset: context.processed,
-                    cutpoint: remaining,
-                    cutpoint_in_buffer: remaining - context.processed_last_none_cut
+                    offset: -(self.context.processed as isize),
+                    cutpoint: remaining - self.context.processed
                 })
             }
         }
 
-        if context.last_cycle_incomplete {
-            context.hash = context.hash.wrapping_add(GEAR[buffer[0] as usize]);
-            if (context.hash & context.mask) == 0 {
-                let pos = context.index * 2;
+        if self.context.last_cycle_incomplete {
+            self.context.hash = self.context.hash.wrapping_add(GEAR[buffer[0] as usize]);
+            if (self.context.hash & self.context.mask) == 0 {
+                let pos = self.context.index * 2;
                 let result = Some(Chunk {
-                    hash: context.hash,
-                    offset: context.processed,
-                    cutpoint: pos + 1,
-                    cutpoint_in_buffer: 1
+                    hash: self.context.hash,
+                    offset: -(self.context.processed as isize),
+                    cutpoint: 1
                 });
 
                 self.recycle_context(pos + 1);
@@ -561,30 +539,29 @@ impl FastCDC {
                 return result;
             }
 
-            context.index += 1;
-            context.last_cycle_incomplete = false;
+            self.context.index += 1;
+            self.context.last_cycle_incomplete = false;
 
-            if context.index == center / 2 {
-                context.mask_ls = self.mask_l_ls;
-                context.mask = self.mask_l;
+            if self.context.index == center / 2 {
+                self.context.mask_ls = self.mask_l_ls;
+                self.context.mask = self.mask_l;
             }
         }
 
-        while context.index < remaining / 2 {
-            let pos = context.index * 2;
-            let pos_in_buffer = pos - context.processed_last_none_cut;
+        while self.context.index < remaining / 2 {
+            let pos = self.context.index * 2;
+            let pos_in_buffer = pos - self.context.processed;
             if pos_in_buffer >= buffer.len() {
-                context.processed_last_none_cut += buffer.len();
+                self.context.processed += buffer.len();
                 return None;
             }
 
-            context.hash = (context.hash << 2).wrapping_add(GEAR_LS[buffer[pos_in_buffer] as usize]);
-            if (context.hash & context.mask_ls) == 0 {
+            self.context.hash = (self.context.hash << 2).wrapping_add(GEAR_LS[buffer[pos_in_buffer] as usize]);
+            if (self.context.hash & self.context.mask_ls) == 0 {
                 let result = Some(Chunk {
-                    hash: context.hash,
-                    offset: context.processed,
-                    cutpoint: pos,
-                    cutpoint_in_buffer: pos_in_buffer
+                    hash: self.context.hash,
+                    offset: -(self.context.processed as isize),
+                    cutpoint: pos_in_buffer
                 });
 
                 self.recycle_context(pos);
@@ -593,18 +570,17 @@ impl FastCDC {
             }
 
             if pos_in_buffer + 1 >= buffer.len() {
-                context.processed_last_none_cut += buffer.len();
-                context.last_cycle_incomplete = true;
+                self.context.processed += buffer.len();
+                self.context.last_cycle_incomplete = true;
                 return None;
             }
 
-            context.hash = context.hash.wrapping_add(GEAR[buffer[pos_in_buffer + 1] as usize]);
-            if (context.hash & context.mask) == 0 {
+            self.context.hash = self.context.hash.wrapping_add(GEAR[buffer[pos_in_buffer + 1] as usize]);
+            if (self.context.hash & self.context.mask) == 0 {
                 let result = Some(Chunk {
-                    hash: context.hash,
-                    offset: context.processed,
-                    cutpoint: pos + 1,
-                    cutpoint_in_buffer: pos_in_buffer + 1
+                    hash: self.context.hash,
+                    offset: -(self.context.processed as isize),
+                    cutpoint: pos_in_buffer + 1
                 });
 
                 self.recycle_context(pos + 1);
@@ -612,22 +588,21 @@ impl FastCDC {
                 return result;
             }
 
-            context.index += 1;
+            self.context.index += 1;
 
-            if context.index == center / 2 {
-                context.mask_ls = self.mask_l_ls;
-                context.mask = self.mask_l;
+            if self.context.index == center / 2 {
+                self.context.mask_ls = self.mask_l_ls;
+                self.context.mask = self.mask_l;
             }
         }
 
         // If all else fails, return the largest chunk. This will happen with
         // pathological data, such as all zeroes.
-        let hash = context.hash;
+        let hash = self.context.hash;
         let result = Some(Chunk {
             hash,
-            offset: context.processed,
-            cutpoint: remaining,
-            cutpoint_in_buffer: remaining - context.processed_last_none_cut
+            offset: -(self.context.processed as isize),
+            cutpoint: remaining - self.context.processed
         });
 
         self.recycle_context(remaining);
@@ -669,7 +644,14 @@ impl<'a, 'b> Iterator for FastCDCIterator<'a, 'b> {
             None => return None
         };
 
-        self.cursor += chunk.cutpoint;
+        let cutpoint = self.cursor + chunk.cutpoint;
+        let chunk = Chunk {
+            hash: chunk.hash,
+            offset: self.cursor as isize,
+            cutpoint
+        };
+
+        self.cursor = cutpoint;
 
         Some(chunk)
     }
@@ -679,7 +661,7 @@ impl<'a, 'b> Iterator for FastCDCIterator<'a, 'b> {
         // values, as the upper bound doesn't actually seem to get used by `std`
         // and using the actual lower bound is practically guaranteed to require
         // a second capacity growth.
-        let upper_bound = self.inner.context.as_ref().unwrap().length / self.inner.min_size;
+        let upper_bound = self.inner.context.remaining / self.inner.min_size;
         (upper_bound, Some(upper_bound))
     }
 }
@@ -753,7 +735,7 @@ pub struct StreamCDC<R: Read> {
     /// Source from which data is read into `buffer`.
     source: R,
     /// Number of bytes read from the source so far.
-    processed: u64,
+    processed: usize,
     /// True when the source produces no more data.
     eof: bool
 }
@@ -836,12 +818,17 @@ impl<R: Read> StreamCDC<R> {
         } else {
             self.inner.set_content_length(self.length);
 
-            let mut chunk = self.inner.cut(&self.buffer[..self.length]).ok_or(Error::Empty)?;
-            // Since the content length is set each invocation, the already set offset is incorrect in this context.
-            chunk.offset = self.processed as usize;
-
+            let chunk = self.inner.cut(&self.buffer[..self.length]).ok_or(Error::Empty)?;
             let data = self.drain_bytes(chunk.cutpoint)?;
-            self.processed += chunk.cutpoint as u64;
+
+            let cutpoint = self.processed + chunk.cutpoint;
+            let chunk = Chunk {
+                hash: chunk.hash,
+                offset: self.processed as isize,
+                cutpoint
+            };
+
+            self.processed = cutpoint;
 
             Ok((data, chunk))
         }
@@ -963,9 +950,8 @@ mod tests {
         for i in 0..10 {
             let chunk = chunker.cut(&array[cursor..]).unwrap();
             assert_eq!(chunk.hash, 14169102344523991076);
-            assert_eq!(chunk.offset, 1024 * i);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, 1024);
-            assert_eq!(chunk.cutpoint_in_buffer, 1024);
             cursor = chunk.cutpoint * (i + 1);
         }
         // assert that nothing more should be returned
@@ -980,7 +966,6 @@ mod tests {
         let contents = read_result.unwrap();
         let mut chunker = FastCDC::new_advanced(4096, 16384, 65535, Normalization::Level1, Some(contents.len())).unwrap();
         let mut cursor: usize = 0;
-        let mut remaining: usize = contents.len();
         let expected: Vec<(u64, usize)> = vec![
             (17968276318003433923, 21325),
             (8197189939299398838, 17140),
@@ -991,13 +976,10 @@ mod tests {
         for (e_hash, e_length) in expected.iter() {
             let chunk = chunker.cut(&contents[cursor..]).unwrap();
             assert_eq!(chunk.hash, *e_hash);
-            assert_eq!(chunk.offset, cursor);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, *e_length);
-            assert_eq!(chunk.cutpoint_in_buffer, *e_length);
             cursor += chunk.cutpoint;
-            remaining -= e_length;
         }
-        assert_eq!(remaining, 0);
     }
 
     #[test]
@@ -1008,19 +990,15 @@ mod tests {
         let mut chunker = FastCDC::new_advanced(8192, 32768, 131072, Normalization::Level1, Some(contents.len())).unwrap();
 
         let mut cursor: usize = 0;
-        let mut remaining: usize = contents.len();
         let expected: Vec<(u64, usize)> =
             vec![(15733367461443853673, 66549), (6321136627705800457, 42917)];
         for (e_hash, e_length) in expected.iter() {
             let chunk = chunker.cut(&contents[cursor..]).unwrap();
             assert_eq!(chunk.hash, *e_hash);
-            assert_eq!(chunk.offset, cursor);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, *e_length);
-            assert_eq!(chunk.cutpoint_in_buffer, *e_length);
             cursor += chunk.cutpoint;
-            remaining -= e_length;
         }
-        assert_eq!(remaining, 0);
     }
 
 
@@ -1032,18 +1010,14 @@ mod tests {
         let mut chunker = FastCDC::new_advanced(16384, 65536, 262144, Normalization::Level1, Some(contents.len())).unwrap();
 
         let mut cursor: usize = 0;
-        let mut remaining: usize = contents.len();
         let expected: Vec<(u64, usize)> = vec![(2504464741100432583, 109466)];
         for (e_hash, e_length) in expected.iter() {
             let chunk = chunker.cut(&contents[cursor..]).unwrap();
             assert_eq!(chunk.hash, *e_hash);
-            assert_eq!(chunk.offset, cursor);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, *e_length);
-            assert_eq!(chunk.cutpoint_in_buffer, *e_length);
             cursor += chunk.cutpoint;
-            remaining -= e_length;
         }
-        assert_eq!(remaining, 0);
     }
 
     struct ExpectedChunk {
@@ -1097,11 +1071,10 @@ mod tests {
         let mut index = 0;
         for chunk in chunker.as_iterator(&contents) {
             assert_eq!(chunk.hash, expected_chunks[index].hash);
-            assert_eq!(chunk.offset, expected_chunks[index].offset as usize);
-            assert_eq!(chunk.cutpoint, expected_chunks[index].length);
-            assert_eq!(chunk.cutpoint_in_buffer, expected_chunks[index].length);
+            assert_eq!(chunk.offset, expected_chunks[index].offset as isize);
+            assert_eq!(chunk.cutpoint, expected_chunks[index].offset as usize + expected_chunks[index].length);
             let mut hasher = Md5::new();
-            hasher.update(&contents[chunk.offset..chunk.offset + chunk.cutpoint]);
+            hasher.update(&contents[chunk.offset as usize..chunk.cutpoint]);
             let table = hasher.finalize();
             let digest = format!("{:x}", table);
             assert_eq!(digest, expected_chunks[index].digest);
@@ -1117,7 +1090,6 @@ mod tests {
         let contents = read_result.unwrap();
         let mut chunker = FastCDC::new_advanced(4096, 16384, 65535, Normalization::Level0, Some(contents.len())).unwrap();
         let mut cursor: usize = 0;
-        let mut remaining: usize = contents.len();
         let expected: Vec<(u64, usize)> = vec![
             (443122261039895162, 6634),
             (15733367461443853673, 59915),
@@ -1128,13 +1100,10 @@ mod tests {
         for (e_hash, e_length) in expected.iter() {
             let chunk = chunker.cut(&contents[cursor..]).unwrap();
             assert_eq!(chunk.hash, *e_hash);
-            assert_eq!(chunk.offset, cursor);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, *e_length);
-            assert_eq!(chunk.cutpoint_in_buffer, *e_length);
             cursor += chunk.cutpoint;
-            remaining -= e_length;
         }
-        assert_eq!(remaining, 0);
     }
 
     #[test]
@@ -1144,7 +1113,6 @@ mod tests {
         let contents = read_result.unwrap();
         let mut chunker = FastCDC::new_advanced(8192, 16384, 32768, Normalization::Level3, Some(contents.len())).unwrap();
         let mut cursor: usize = 0;
-        let mut remaining: usize = contents.len();
         let expected: Vec<(u64, usize)> = vec![
             (10718006254707412376, 17350),
             (13104072099671895560, 19911),
@@ -1156,13 +1124,10 @@ mod tests {
         for (e_hash, e_length) in expected.iter() {
             let chunk = chunker.cut(&contents[cursor..]).unwrap();
             assert_eq!(chunk.hash, *e_hash);
-            assert_eq!(chunk.offset, cursor);
+            assert_eq!(chunk.offset, 0);
             assert_eq!(chunk.cutpoint, *e_length);
-            assert_eq!(chunk.cutpoint_in_buffer, *e_length);
             cursor += chunk.cutpoint;
-            remaining -= e_length;
         }
-        assert_eq!(remaining, 0);
     }
 
     #[test]
@@ -1215,9 +1180,8 @@ mod tests {
             assert!(result.is_ok());
             let (data, chunk) = result.unwrap();
             assert_eq!(chunk.hash, expected_chunks[index].hash);
-            assert_eq!(chunk.offset, expected_chunks[index].offset as usize);
-            assert_eq!(chunk.cutpoint, expected_chunks[index].length);
-            assert_eq!(chunk.cutpoint_in_buffer, expected_chunks[index].length);
+            assert_eq!(chunk.offset, expected_chunks[index].offset as isize);
+            assert_eq!(chunk.cutpoint, expected_chunks[index].offset as usize + expected_chunks[index].length);
             let mut hasher = Md5::new();
             hasher.update(&data);
             let table = hasher.finalize();
@@ -1236,7 +1200,6 @@ mod tests {
 
         let contents = read_result.unwrap();
         let mut chunker = FastCDC::new_advanced(8192, 16384, 32768, Normalization::Level3, Some(contents.len())).unwrap();
-        let mut cursor: usize = 0;
         let expected: Vec<(u64, usize)> = vec![
             (10718006254707412376, 17350),
             (13104072099671895560, 19911),
@@ -1245,26 +1208,28 @@ mod tests {
             (2473608525189754172, 19940),
             (2504464741100432583, 17320),
         ];
+        let mut cursor = 0;
+        let mut unchunked_bytes = 0usize;
+
         for (e_hash, e_length) in expected.iter() {
-            let mut i = 0;
             loop {
-                let start = cursor + i * buffer_len;
-                let mut end = cursor + (i + 1) * buffer_len;
+                let mut end = cursor + buffer_len;
                 if end > contents.len() {
                     end = contents.len();
                 }
 
-                let buffer = &contents[start..end];
-
-                if let Some(chunk) = chunker.cut(buffer) {
+                if let Some(chunk) = chunker.cut( &contents[cursor..end]) {
                     assert_eq!(chunk.hash, *e_hash);
-                    assert_eq!(chunk.offset, cursor);
-                    assert_eq!(chunk.cutpoint, *e_length);
-                    cursor += chunk.cutpoint;
-                    break
-                }
+                    assert_eq!(chunk.offset, unchunked_bytes as isize * -1);
+                    assert_eq!(chunk.cutpoint, *e_length - unchunked_bytes);
 
-                i += 1;
+                    cursor += chunk.cutpoint;
+                    unchunked_bytes = 0;
+                    break
+                } else {
+                    cursor += buffer_len;
+                    unchunked_bytes += buffer_len;
+                }
             }
         }
         assert_eq!(cursor, contents.len());

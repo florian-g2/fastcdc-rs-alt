@@ -30,7 +30,7 @@
 //! let mut chunker = FastCDC::new(4096, 16384, 65535).unwrap();
 //!
 //! for chunk in chunker.as_iterator(&contents) {
-//!     println!("offset={} size={}", chunk.offset, chunk.cutpoint);
+//!     println!("offset={} size={}", chunk.offset, chunk.get_length());
 //! }
 //! ```
 //!
@@ -44,7 +44,7 @@
 //! let contents = fs::read("test/fixtures/SekienAkashita.jpg").unwrap();
 //! let mut chunker = FastCDC::new_advanced(8192, 16384, 32768, Normalization::Level3, None).unwrap();
 //! for chunk in chunker.as_iterator(&contents) {
-//!     println!("offset={} size={}", chunk.offset, chunk.cutpoint);
+//!     println!("offset={} size={}", chunk.offset, chunk.get_length());
 //! }
 //! ```
 //!
