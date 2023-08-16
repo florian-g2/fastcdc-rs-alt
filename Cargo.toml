@@ -1,6 +1,6 @@
 [package]
 name = "fastcdc-alt"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Florian Gäbler", "Nathan Fiedler <nathanfiedler@fastmail.fm>"]
 edition = "2018"
 description = "FastCDC (content defined chunking) implementation in pure Rust with an alternative API to the original crate"
