@@ -61,7 +61,7 @@ pub const MAXIMUM_MAX: u32 = 16_777_216;
 // the deduplication ratio is slightly improved when the mask bits are spread
 // relatively evenly, hence these seemingly "magic" values.
 //
-pub(self) const MASKS: [u64; 26] = [
+pub const MASKS: [u64; 26] = [
     0,                  // padding
     0,                  // padding
     0,                  // padding
@@ -857,7 +857,7 @@ impl<R: Read> Iterator for StreamCDC<R> {
 ///
 /// Base-2 logarithm function for unsigned 32-bit integers.
 ///
-pub(self) fn logarithm2(value: u32) -> u32 {
+pub fn logarithm2(value: u32) -> u32 {
     f64::from(value).log2().round() as u32
 }
 
