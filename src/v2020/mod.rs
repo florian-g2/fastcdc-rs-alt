@@ -531,7 +531,7 @@ impl FastCDC {
                 let result = Some(Chunk {
                     hash: self.context.hash,
                     offset: -(self.context.processed as isize),
-                    cutpoint: 1
+                    cutpoint: 0
                 });
 
                 self.recycle_context(pos + 1);
