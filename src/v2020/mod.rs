@@ -516,11 +516,17 @@ impl FastCDC {
             return if remaining == 0 {
                 None
             } else {
-                Some(Chunk {
-                    hash: 0,
-                    offset: -(self.context.processed as isize),
-                    cutpoint: remaining - self.context.processed
-                })
+                let cutpoint = remaining - self.context.processed;
+                if cutpoint > buffer.len() {
+                    self.context.processed += buffer.len();
+                    None
+                } else {
+                    Some(Chunk {
+                        hash: 0,
+                        offset: -(self.context.processed as isize),
+                        cutpoint
+                    })
+                }
             }
         }
 
